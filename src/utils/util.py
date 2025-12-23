@@ -98,7 +98,7 @@ def delete_additional_ckpt(base_path, num_keep):
             shutil.rmtree(path_to_dir)
 
 
-def save_videos_from_pil(pil_images, path, fps=8, crf=None):
+def save_videos_from_pil(pil_images, path, fps=8, crf=None, audio_source=None):
     import av
 
     save_fmt = Path(path).suffix
@@ -109,18 +109,58 @@ def save_videos_from_pil(pil_images, path, fps=8, crf=None):
         if True:
             codec = "libx264"
             container = av.open(path, "w")
-            stream = container.add_stream(codec, rate=fps)
+            video_stream = container.add_stream(codec, rate=fps)
 
-            stream.width = width
-            stream.height = height
+            video_stream.width = width
+            video_stream.height = height
             if crf is not None:
-                stream.options = {'crf': str(crf)}
+                video_stream.options = {'crf': str(crf)}
+
+            # Extract audio from source video if provided
+            audio_stream = None
+            audio_frames = []
+            if audio_source is not None:
+                try:
+                    source_container = av.open(audio_source)
+                    source_audio_stream = next((s for s in source_container.streams if s.type == "audio"), None)
+                    if source_audio_stream is not None:
+                        # Create audio stream with same parameters
+                        audio_stream = container.add_stream("aac", rate=source_audio_stream.rate)
+                        audio_stream.layout = source_audio_stream.layout
+
+                        # Calculate output video duration in seconds
+                        output_duration = len(pil_images) / fps
+
+                        # Decode audio frames up to output video duration
+                        for packet in source_container.demux(source_audio_stream):
+                            for frame in packet.decode():
+                                frame_time = float(frame.pts * source_audio_stream.time_base)
+                                if frame_time > output_duration:
+                                    break
+                                audio_frames.append(frame)
+                            else:
+                                continue
+                            break
+                    source_container.close()
+                except Exception as e:
+                    print(f"Warning: Could not extract audio from {audio_source}: {e}")
+                    audio_stream = None
+                    audio_frames = []
 
             for pil_image in pil_images:
                 # pil_image = Image.fromarray(image_arr).convert("RGB")
                 av_frame = av.VideoFrame.from_image(pil_image)
-                container.mux(stream.encode(av_frame))
-            container.mux(stream.encode())
+                container.mux(video_stream.encode(av_frame))
+            container.mux(video_stream.encode())
+
+            # Encode and mux audio frames
+            if audio_stream is not None and audio_frames:
+                for audio_frame in audio_frames:
+                    for packet in audio_stream.encode(audio_frame):
+                        container.mux(packet)
+                for packet in audio_stream.encode():
+                    container.mux(packet)
+
             container.close()
         else:
 
@@ -145,7 +185,7 @@ def save_videos_from_pil(pil_images, path, fps=8, crf=None):
         raise ValueError("Unsupported file type. Use .mp4 or .gif.")
 
 
-def save_videos_grid(videos_, path: str, rescale=False, n_rows=6, fps=8, crf=None):
+def save_videos_grid(videos_, path: str, rescale=False, n_rows=6, fps=8, crf=None, audio_source=None):
     if not isinstance(videos_, list): videos_ = [videos_]
 
     outputs = []
@@ -167,7 +207,7 @@ def save_videos_grid(videos_, path: str, rescale=False, n_rows=6, fps=8, crf=Non
         outputs.append(output)
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    save_videos_from_pil(outputs, path, fps, crf)
+    save_videos_from_pil(outputs, path, fps, crf, audio_source)
 
 
 def save_videos_grid_ori(videos: torch.Tensor, path: str, rescale=False, n_rows=6, fps=8):
