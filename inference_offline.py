@@ -261,7 +261,7 @@ def main(args):
 
             if True:
                 save_vid_path = save_vid_path.replace(save_vid_dir, save_split_vid_dir)
-                save_videos_grid(gen_video, save_vid_path, n_rows=1, fps=25, crf=18)
+                save_videos_grid(gen_video, save_vid_path, n_rows=1, fps=25, crf=18, audio_source=pose_video_path)
 
 if __name__ == "__main__":
     args = parse_args()
