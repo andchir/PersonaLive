@@ -63,18 +63,18 @@ def create_test_video_with_audio(output_path, duration_seconds=5, fps=25, width=
     t = np.linspace(0, duration_seconds, num_samples, dtype=np.float32)
     # 440 Hz sine wave (A4 note)
     audio_data = (np.sin(2 * np.pi * 440 * t) * 0.5 * 32767).astype(np.int16)
-    # Make stereo
-    audio_data = np.column_stack([audio_data, audio_data])
+    # Make stereo - shape needs to be (channels, samples) for planar format
+    audio_stereo = np.stack([audio_data, audio_data])  # (2, num_samples)
 
     pts = 0
     for i in range(0, num_samples, samples_per_frame):
-        chunk = audio_data[i:i + samples_per_frame]
-        if len(chunk) == 0:
+        chunk = audio_stereo[:, i:i + samples_per_frame]
+        if chunk.shape[1] == 0:
             break
-        frame = av.AudioFrame.from_ndarray(chunk.T, format="s16", layout="stereo")
+        frame = av.AudioFrame.from_ndarray(chunk, format="s16p", layout="stereo")
         frame.sample_rate = sample_rate
         frame.pts = pts
-        pts += len(chunk)
+        pts += chunk.shape[1]
         for packet in audio_stream.encode(frame):
             container.mux(packet)
 
